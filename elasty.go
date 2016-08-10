@@ -41,6 +41,9 @@ func main() {
 	//        { "doc" : {"title" : "My updated blog post"}}
 	//        `)
 
+	var url string
+	xulu.Use(url)
+
 	app := cli.NewApp()
 	app.Name = "elasty"
 	app.Version = "0.0.1"
@@ -53,6 +56,15 @@ func main() {
 	}
 	app.Usage = "Elasticsearch toolbelt based on experience"
 
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:        "url",
+			Value:       "http://localhost:9200",
+			Usage:       "connect url stub",
+			Destination: &url,
+		},
+	}
+
 	app.Commands = []cli.Command{
 		{
 			Name:    "threadpool",
@@ -64,7 +76,7 @@ func main() {
 			},
 		},
 		{
-			Name:    "complete",
+			Name:    "rmqtoes",
 			Aliases: []string{"c"},
 			Usage:   "complete a task on the list",
 			Action: func(c *cli.Context) error {
