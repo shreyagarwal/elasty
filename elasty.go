@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -30,19 +31,20 @@ type esBulkStmntType struct {
 	// s_update esBulkCntrlStmnt `json:"update,omitempty"`
 }
 
+/* GLobal variables */
+var esUrl, esIndex, rmqConnectStr, exName, exKind, qName, qBindKey string
+var rmqReconnTimeout int
+
 func main() {
 
-	// processRaw(`{ "delete": { "_index": "website", "_type": "blog", "_id": "123" }}
-	//        { "create": { "_index": "website", "_type": "blog", "_id": "123" }}
-	//        { "title":    "My first blog post" }
-	//        { "index":  { "_index": "website", "_type": "blog" }}
-	//        { "title":    "My second blog post" }
-	//        { "update": { "_index": "website", "_type": "blog", "_id": "123", "_retry_on_conflict" : 3}}
-	//        { "doc" : {"title" : "My updated blog post"}}
-	//        `)
+	/* Main function only has CLI parsing */
+	cliArgsParse()
+}
 
-	var url string
-	xulu.Use(url)
+/* Parse the CLI args and call appropriate function*/
+func cliArgsParse() {
+
+	xulu.Use(esUrl, esIndex)
 
 	app := cli.NewApp()
 	app.Name = "elasty"
@@ -58,14 +60,86 @@ func main() {
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:        "url",
+			Name:        "url, u",
 			Value:       "http://localhost:9200",
-			Usage:       "connect url stub",
-			Destination: &url,
+			Usage:       "connect url stub ( default http://localhost:9200 )",
+			Destination: &esUrl,
+		},
+		cli.StringFlag{
+			Name:        "index, i",
+			Value:       "test",
+			Usage:       "index name ( default test )",
+			Destination: &esIndex,
+		},
+		cli.StringFlag{
+			Name:        "rmqconnectstr, r",
+			Value:       "amqp://guest:guest@localhost:5672/",
+			Usage:       "For rmq2es : RabbitMq Connection String ( default amqp://guest:guest@localhost:5672/ )",
+			Destination: &rmqConnectStr,
+		},
+		cli.IntFlag{
+			Name:        "rmqreconntimeout",
+			Value:       5 * 1000,
+			Usage:       "For rmq2es : RabbitMq ReConnection Timeout ms( default 5000 )",
+			Destination: &rmqReconnTimeout,
+		},
+
+		// Exchange CLI flags
+		cli.StringFlag{
+			Name:        "exname",
+			Value:       "test",
+			Usage:       "For rmq2es : Exchange name to declare ( Default test)",
+			Destination: &exName,
+		},
+		cli.StringFlag{
+			Name:        "exkind",
+			Value:       "topic",
+			Usage:       "For rmq2es : Exchange kind ( default topic)",
+			Destination: &exKind,
+		},
+
+		// Rmq Queue CLI Flags
+		cli.StringFlag{
+			Name:        "qName",
+			Value:       "test",
+			Usage:       "For rmq2es : Queue name to declare ( Default test)",
+			Destination: &qName,
+		},
+		cli.StringFlag{
+			Name:        "qBindKey",
+			Value:       "#",
+			Usage:       "For rmq2es : Queue Binding Key with exchange ( default #)",
+			Destination: &qBindKey,
 		},
 	}
 
 	app.Commands = []cli.Command{
+		{
+			Name:    "test",
+			Aliases: []string{"th"},
+			Usage:   "test",
+			Action: func(c *cli.Context) error {
+
+				// processRaw(`{ "delete": { "_index": "website", "_type": "blog", "_id": "123" }}
+				//                { "create": { "_index": "website", "_type": "blog", "_id": "123" }}
+				//                { "title":    "My first blog post" }
+				//                { "index":  { "_index": "website", "_type": "blog" }}
+				//                { "title":    "My second blog post" }
+				//                { "update": { "_index": "website", "_type": "blog", "_id": "123", "_retry_on_conflict" : 3}}
+				//                { "doc" : {"title" : "My updated blog post"}}
+				//                `)
+
+				dat, err := ioutil.ReadFile("./requests")
+				if err != nil {
+					panic(err)
+				}
+				fmt.Print(len(string(dat)))
+
+				esBulkOps(dat)
+				fmt.Printf("Done processing inputs")
+				return nil
+			},
+		},
 		{
 			Name:    "threadpool",
 			Aliases: []string{"th"},
@@ -75,42 +149,24 @@ func main() {
 				return nil
 			},
 		},
+
 		{
-			Name:    "rmqtoes",
-			Aliases: []string{"c"},
-			Usage:   "complete a task on the list",
+			Name:  "rmq2es",
+			Usage: "RabbitMq to ES ingestion",
 			Action: func(c *cli.Context) error {
-				fmt.Println("completed task: ", c.Args().First())
+				rmq2es()
 				return nil
-			},
-		},
-		{
-			Name:    "template",
-			Aliases: []string{"t"},
-			Usage:   "options for task templates",
-			Subcommands: []cli.Command{
-				{
-					Name:  "add",
-					Usage: "add a new template",
-					Action: func(c *cli.Context) error {
-						fmt.Println("new task template: ", c.Args().First())
-						return nil
-					},
-				},
-				{
-					Name:  "remove",
-					Usage: "remove an existing template",
-					Action: func(c *cli.Context) error {
-						fmt.Println("removed task template: ", c.Args().First())
-						return nil
-					},
-				},
 			},
 		},
 	}
 
 	app.Run(os.Args)
+}
 
+/* Start process to consume data from Rmq and insert in ES */
+func rmq2es() {
+
+	initializeRmq()
 }
 
 func processRaw(rawData string) {
@@ -129,37 +185,101 @@ func processRaw(rawData string) {
 	// fmt.Printf("%d\n", len(strings.Split(rawData, "\n")))
 
 	var splits []string = strings.Split(rawData, "\n")
-	xulu.Use(splits)
+	var lType string
+	var jumps int
+	var iLines int = 0
+
+	xulu.Use(splits, lType, jumps)
 
 	// work on each split
 	fmt.Printf("Splitting in lines : %d\n", len(splits))
 
-	fmt.Printf("Marshalling Line : %q\n", splits[0])
+	for iLines < len(splits) {
+		fmt.Printf("Marshalling Line : %q\n", splits[iLines])
+		parsedLine, is_sane := parseSplit(splits[iLines])
+
+		if is_sane == true {
+			lType, jumps = detectLineType(parsedLine)
+			// fmt.Printf("%q\n", parsed.(type))
+
+			iLines = iLines + jumps
+		} else {
+			iLines = iLines + 1
+		}
+
+	}
+
+}
+
+func parseSplit(singleLine string) (map[string]interface{}, bool) {
 
 	// Json unmarshal
 	// var stmnt1 esBulkStmntType
 	// err := json.Unmarshal([]byte(splits[0]), &stmnt1)
 	// if err != nil {
-	// 	// panic(err)
-	// 	log.Fatalf("json.Unmarshal: %s", err)
+	//  // panic(err)
+	//  log.Fatalf("json.Unmarshal: %s", err)
 	// }
 
 	// var parsed interface{}
 	var parsed map[string]interface{}
+	var is_sane bool = true
 
-	err := json.Unmarshal([]byte(splits[0]), &parsed)
+	err := json.Unmarshal([]byte(singleLine), &parsed)
 	if err != nil {
-		panic(err)
-		log.Fatalf("json.Unmarshal interface: %s", err)
+		// panic(err)
+		log.Printf("json.Unmarshal interface: %s", err)
+		is_sane = false
 	}
 
-	remarsh2, _ := json.Marshal(parsed)
-
+	// remarsh2, _ := json.Marshal(parsed)
+	// xulu.Use(remarsh2)
 	// map[delete:map[_id:123 _index:website _type:blog]]
-	fmt.Println(string(remarsh2))
-	// fmt.Println("%q\n", parsed, map[delete)
+	// fmt.Println(string(remarsh2))
 
-	// fmt.Printf("%q\n", parsed.(type))
+	return parsed, is_sane
+
+}
+
+func detectLineType(unmarshalledLine map[string]interface{}) (string, int) {
+
+	var jumps int
+	var lType string
+
+	// return line type and jump lines
+	if unmarshalledLine["create"] != nil {
+		lType = "create"
+
+		// jump 2 lines
+		jumps = 2
+
+	} else if unmarshalledLine["delete"] != nil {
+		lType = "delete"
+
+		// jump 1 line
+		jumps = 1
+
+	} else if unmarshalledLine["index"] != nil {
+		lType = "index"
+		// jump 2 lines
+		jumps = 2
+
+	} else if unmarshalledLine["update"] != nil {
+		lType = "update"
+
+		// jump 2 lines
+		jumps = 2
+
+	} else {
+		// No idea , simply skip this
+		lType = "misc"
+
+		// jump 1 line
+		jumps = 1
+	}
+
+	fmt.Printf("Statement type : %q\n", lType)
+	return lType, jumps
 }
 
 func parseThreadPoolOutpu(bulkData string) {
@@ -170,7 +290,7 @@ func parseThreadPoolOutpu(bulkData string) {
 
 }
 
-func hitEs(bulkData string) {
+func esGetThreadPool(bulkData string) {
 	resp, err := http.Get("http://localhost:9200/_cat/thread_pool?v&h=id,pid,ip,host,bulk.active,bulk.queue")
 
 	if err != nil {
@@ -190,83 +310,111 @@ func hitEs(bulkData string) {
 
 }
 
+func esBulkOps(bulkData []byte) {
+
+	// Create bulk Uri
+	url := esUrl + "/" + esIndex + "/_bulk"
+	fmt.Println("URL:>", url)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(bulkData)))
+	req.Header.Set("User-Agent", "elasty 1.0 - golang")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("Es Bulk operation Error: %s", err)
+	}
+	defer resp.Body.Close()
+
+	fmt.Println("response Status:", resp.Status)
+	fmt.Println("response Headers:", resp.Header)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	// fmt.Println("response Body:", string(body))
+	xulu.Use(body)
+}
+
+// Re Initizlise rabbit Mq connection
+func reInitializeRmq() {
+	time.Sleep(time.Duration(rmqReconnTimeout) * time.Millisecond)
+	initializeRmq()
+}
+
 // Initizlise rabbit Mq connection
-func initialize() {
+func initializeRmq() {
 
 	// Reconnect on conection Close
 	c := make(chan *amqp.Error)
 	go func() {
 		err := <-c
-		log.Println("reconnect after 5 seconds: " + err.Error())
-
-		time.Sleep(5 * 1000 * time.Millisecond)
-
-		initialize()
+		log.Println("Reconnect after 5 seconds: " + err.Error())
+		reInitializeRmq()
 	}()
 
 	// Connects opens an AMQP connection from the credentials in the URL.
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err := amqp.Dial(rmqConnectStr)
 	if err != nil {
-		log.Fatalf("connection.open: %s", err)
-		panic("cannot connect")
+		log.Println("Rmq Connection open: %s", err)
+		reInitializeRmq()
 	}
 	conn.NotifyClose(c)
-	// defer conn.Close()
 	fmt.Printf("Connection open\n")
 
 	// Opening channel
 	ch, err := conn.Channel()
 	if err != nil {
-		log.Fatalf("channel.open: %s", err)
-		panic("cannot open channel")
+		log.Println("Rmq Channel open: %s", err)
+		reInitializeRmq()
 	}
 	ch.NotifyClose(c)
 	fmt.Printf("Channel open\n")
 
 	// Declare exchange
-	err = ch.ExchangeDeclare("go_ex1", "topic", true, false, false, false, nil)
+	err = ch.ExchangeDeclare(exName, exKind, true, false, false, false, nil)
 	if err != nil {
-		log.Fatalf("channel.ExchangeDeclare: %s", err)
-		panic("cannot declare exchange")
+		log.Println("Rmq Exchange Declare: %s", err)
+		reInitializeRmq()
 	}
 	fmt.Printf("Exchange configured\n")
 
 	// declare Queue
-	q, err := ch.QueueDeclare("go_q1", true, false, false, false, nil)
+	q, err := ch.QueueDeclare(qName, true, false, false, false, nil)
 	if err != nil {
-		log.Fatalf("channel.QueueDeclare: %s", err)
-		panic("cannot declare q")
+		log.Println("Rmq Q Declare: %s", err)
+		reInitializeRmq()
 	}
 	fmt.Printf("Q configured\n")
 	_ = q
 
 	// Q bind
-	err = ch.QueueBind("go_q1", "#", "go_ex1", false, nil)
+	err = ch.QueueBind(qName, qBindKey, exName, false, nil)
 	if err != nil {
-		log.Fatalf("channel.QueueBind: %s", err)
-		panic("cannot QueueBind")
+		log.Println("Rmq Q Bind: %s", err)
+		reInitializeRmq()
 	}
 	fmt.Printf("Q bound\n")
 
 	// Qos
-
-	// Set our quality of service.  Since we're sharing 3 consumers on the same
-	// channel, we want at least 3 messages in flight.
 	err = ch.Qos(1, 0, false)
 	if err != nil {
-		log.Fatalf("basic.qos: %v", err)
+		log.Println("Qos error: %s", err)
+		reInitializeRmq()
 	}
 
-	//consume
-	test_msgs, err := ch.Consume("go_q1", "go_q1_CONSUMER", false, false, false, false, nil)
+	//Setup consumer
+	es_msgs, err := ch.Consume(qName, "go_consumer", false, false, false, false, nil)
 	if err != nil {
-		log.Fatalf("basic.consume: %v", err)
+		log.Println("Rmq Consumer Setup: %s", err)
+		reInitializeRmq()
 	}
 
 	go func() {
-		for each_msg := range test_msgs {
+		for each_msg := range es_msgs {
 			log.Println("Msg: %s", string(each_msg.Body[:]))
 
+			// send it to Elasticsearch as soon as you receive it .. and wait on receiving
+			esBulkOps(each_msg.Body[:])
 			err = each_msg.Ack(false)
 			if err != nil {
 				log.Fatalf("Error in Ack: %v", err)
@@ -274,6 +422,6 @@ func initialize() {
 		}
 	}()
 
-	// send it to Elasticsearch as soon as you receive it .. and wait on receiving
+	time.Sleep(1000000 * time.Second)
 
 }

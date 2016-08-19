@@ -5,8 +5,7 @@ elastic CLI for unix mac
 # Feed Messages in Elasticsearch from RabbitMq
 
 # Config object
- - **host** : Can be single value like `http://localhost:9200` , `https://localhost:9200` or can be an array to indicate cluster `['http://10.0.0.1:9200', 'http://10.0.0.2:9200'] . NOTE: Please specify full uri, i.e. with protocol and port.
- - **reqopts** : All the headers mentioned here are passed As-is in node HTTP request. NOTE : the request is created with this object and values like uri, host, etc. are overriden later.
+ - **uri** : Can be single value like `http://localhost:9200` , `https://localhost:9200` or can be an array to indicate cluster `['http://10.0.0.1:9200', 'http://10.0.0.2:9200'] . NOTE: Please specify full uri, i.e. with protocol and port.
  - **bulkQueueThreshold** : While doing bulk operation in ES, Threshold count is checked before each bulk op. If value returned for any of the nodes is > than this value, then operation wont be done on that node, and another node will be tried. Default : 2
  - **bulkThresholdRetries** : If bulk op request fails repeatedly on each node, then after max tries, the operation is delared failed. 0 or negative value indicates retry forever. Default : no. of hosts * bulkQueueThreshold * 2 . 
  - **bulkThresholdRetryInterval** : Retry interval for bulk operations, if it fails due to whatever reason, value in Milliseconds. Default : 2000 
@@ -43,7 +42,12 @@ A setting should say how long can a message survive if not flushed. Lets keep a 
      + Query Help : Hits, time taken, etc.
 
  - Insert bulk data in ES
-     - connect with rabbitMq and Start getting messages
+     + Prog should be blocking without Sleep
+     - Flush Data based on document count
+     - Flush Data based on Time
+     - Schema chek in case of bulk insert. helps in indentifying errors
+     - Force Flush on signal receive
+     - Check Threadpool before eash insert if all is OK 
 
  - Create brew , Deb file service
 
