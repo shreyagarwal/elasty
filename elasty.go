@@ -32,8 +32,17 @@ type esBulkStmntType struct {
 }
 
 /* GLobal variables */
+
+// rabbit mq variables
 var esUrl, esIndex, rmqConnectStr, exName, exKind, qName, qBindKey string
 var rmqReconnTimeout int
+var dryrun bool = false
+
+// Buffer variables global
+// var bufMsgs byte[]
+// var bufMsgCount int
+
+/* End global variables */
 
 func main() {
 
@@ -71,6 +80,8 @@ func cliArgsParse() {
 			Usage:       "index name ( default test )",
 			Destination: &esIndex,
 		},
+
+		// Rmq2ES flags
 		cli.StringFlag{
 			Name:        "rmqconnectstr, r",
 			Value:       "amqp://guest:guest@localhost:5672/",
@@ -153,7 +164,23 @@ func cliArgsParse() {
 		{
 			Name:  "rmq2es",
 			Usage: "RabbitMq to ES ingestion",
+			Flags: []cli.Flag{
+				cli.BoolFlag{
+					Name:  "dry-run",
+					Usage: "dry run : Messge aren't inserted in ES, just printed on screen",
+				},
+			},
 			Action: func(c *cli.Context) error {
+
+				// check if Dry Run
+				if !c.Bool("dry-run") {
+					fmt.Println("Dry run flag disabled")
+					dryrun = false
+				} else {
+					fmt.Println("Dry run flag enabled")
+					dryrun = true
+				}
+
 				rmq2es()
 				return nil
 			},
@@ -161,12 +188,22 @@ func cliArgsParse() {
 	}
 
 	app.Run(os.Args)
+
 }
 
 /* Start process to consume data from Rmq and insert in ES */
 func rmq2es() {
 
 	initializeRmq()
+
+	waitForever()
+}
+
+func waitForever() {
+	// Waiting forever
+	fmt.Printf("Waiting forever. Press Ctl+C to exit ...")
+	forever := make(chan bool)
+	<-forever
 }
 
 func processRaw(rawData string) {
@@ -312,6 +349,19 @@ func esGetThreadPool(bulkData string) {
 
 func esBulkOps(bulkData []byte) {
 
+	/*
+		- Collect the message in buffer
+		- See if Buffer needs to be Flushed
+			- If yes, Flush
+	*/
+
+	/* Dry run */
+	if dryrun == true {
+		fmt.Println("Printing Dry Run Data")
+		fmt.Println(string(bulkData))
+		return
+	}
+
 	// Create bulk Uri
 	url := esUrl + "/" + esIndex + "/_bulk"
 	fmt.Println("URL:>", url)
@@ -333,6 +383,7 @@ func esBulkOps(bulkData []byte) {
 
 	// fmt.Println("response Body:", string(body))
 	xulu.Use(body)
+
 }
 
 // Re Initizlise rabbit Mq connection
@@ -353,7 +404,7 @@ func initializeRmq() {
 	}()
 
 	// Connects opens an AMQP connection from the credentials in the URL.
-	conn, err := amqp.Dial(rmqConnectStr)
+	conn, err := amqp.DialConfig(rmqConnectStr, amqp.Config{FrameSize: 10240000})
 	if err != nil {
 		log.Println("Rmq Connection open: %s", err)
 		reInitializeRmq()
@@ -379,7 +430,14 @@ func initializeRmq() {
 	fmt.Printf("Exchange configured\n")
 
 	// declare Queue
-	q, err := ch.QueueDeclare(qName, true, false, false, false, nil)
+	q, err := ch.QueueDeclare(
+		qName, // qname
+		false, // durable
+		true,  // delete when unused
+		false, // exclusive
+		false, // no-wait
+		nil,   // arguments table
+	)
 	if err != nil {
 		log.Println("Rmq Q Declare: %s", err)
 		reInitializeRmq()
@@ -411,7 +469,7 @@ func initializeRmq() {
 
 	go func() {
 		for each_msg := range es_msgs {
-			log.Println("Msg: %s", string(each_msg.Body[:]))
+			// fmt.Printf("Msg: %s %s", string(each_msg.MessageId), string(each_msg.Body[:]))
 
 			// send it to Elasticsearch as soon as you receive it .. and wait on receiving
 			esBulkOps(each_msg.Body[:])
@@ -421,7 +479,5 @@ func initializeRmq() {
 			}
 		}
 	}()
-
-	time.Sleep(1000000 * time.Second)
 
 }
