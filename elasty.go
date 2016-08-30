@@ -152,11 +152,11 @@ func cliArgsParse() {
 			},
 		},
 		{
-			Name:    "threadpool",
-			Aliases: []string{"th"},
-			Usage:   "Show cluster threadpool",
+			Name:  "threadpool",
+			Usage: "Show cluster threadpool",
 			Action: func(c *cli.Context) error {
 
+				esGetThreadPool()
 				return nil
 			},
 		},
@@ -319,20 +319,29 @@ func detectLineType(unmarshalledLine map[string]interface{}) (string, int) {
 	return lType, jumps
 }
 
-func parseThreadPoolOutpu(bulkData string) {
+func parseThreadPoolOutput(bulkData string) {
 	/*
 	   t := "id   pid   ip        host      bulk.active bulk.queue"
 	   fmt.Printf("%q\n", strings.Fields(t))
 	*/
 
+	// Split string by newlines
+	for _, element := range strings.Split(bulkData, "\n") {
+		if len(element) <= 0 {
+			continue
+		}
+		fmt.Printf("%q\n", strings.Fields(element))
+	}
 }
 
-func esGetThreadPool(bulkData string) {
-	resp, err := http.Get("http://localhost:9200/_cat/thread_pool?v&h=id,pid,ip,host,bulk.active,bulk.queue")
+func esGetThreadPool() {
+	url := esUrl + "/_cat/thread_pool?v&h=id,pid,ip,host,bulk.active,bulk.queue"
+	fmt.Println("URL:>", url)
+
+	resp, err := http.Get(url)
 
 	if err != nil {
-		// handle error
-		log.Fatal(err)
+		log.Fatalf("Threadpool HTTP Error Error: %s", err)
 	}
 
 	defer resp.Body.Close()
@@ -340,11 +349,11 @@ func esGetThreadPool(bulkData string) {
 	body, err := ioutil.ReadAll(resp.Body)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Threadpool Http Response body, Error: %s", err)
 	}
 
-	fmt.Printf("ThreadPool, %q", body)
-
+	parseThreadPoolOutput(string(body))
+	// fmt.Printf("ThreadPool, %q", body)
 }
 
 func esBulkOps(bulkData []byte) {
@@ -363,7 +372,7 @@ func esBulkOps(bulkData []byte) {
 	}
 
 	// Create bulk Uri
-	url := esUrl + "/" + esIndex + "/_bulk"
+	url := esUrl + "/_bulk"
 	fmt.Println("URL:>", url)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(bulkData)))
