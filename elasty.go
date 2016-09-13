@@ -12,31 +12,17 @@ import (
 	"time"
 
 	"github.com/lunux2008/xulu"
+	"github.com/spf13/viper"
 	"github.com/streadway/amqp"
 	"github.com/urfave/cli"
 )
-
-type esBulkCntrlStmnt struct {
-	_index             string `json:"_index,omitempty"`
-	_type              string `json:"_type,omitempty"`
-	_id                string `json:"_id,omitempty"`
-	_retry_on_conflict string `json:"_retry_on_conflict,omitempty"`
-	_version           string `json:"_version,omitempty"`
-}
-
-type esBulkStmntType struct {
-	s_delete esBulkCntrlStmnt `json:"delete"`
-	// s_create esBulkCntrlStmnt `json:"create,omitempty"`
-	// s_insert esBulkCntrlStmnt `json:"insert,omitempty"`
-	// s_update esBulkCntrlStmnt `json:"update,omitempty"`
-}
 
 /* GLobal variables */
 
 // rabbit mq variables
 var esUrl, esIndex, rmqConnectStr, exName, exKind, qName, qBindKey string
-var rmqReconnTimeout int
-var dryrun bool = false
+var rmqReconnTimeout, prefetch_count, prefetch_size int
+var dryrun, prefetch_global bool
 
 // Buffer variables global
 // var bufMsgs byte[]
@@ -45,6 +31,9 @@ var dryrun bool = false
 /* End global variables */
 
 func main() {
+
+	/* Read config file */
+	readConfig()
 
 	/* Main function only has CLI parsing */
 	cliArgsParse()
@@ -189,6 +178,51 @@ func cliArgsParse() {
 
 	app.Run(os.Args)
 
+}
+
+func setDefaultConfigs() {
+}
+
+func readConfig() {
+
+	// Setting default variables before reading config file
+	setDefaultConfigs()
+
+	viper.SetConfigName("app")    // no need to include file extension
+	viper.AddConfigPath("config") // set the path of your config file
+
+	err := viper.ReadInConfig()
+	if err != nil {
+		fmt.Println("Config file not found...")
+	} else {
+
+		// Rmq Prefetch count
+		if viper.IsSet("rmq2es.prefetch_count") {
+			prefetch_count = viper.GetInt("rmq2es.prefetch_count")
+		} else {
+			// Default 1 ( safe )
+			prefetch_count = 1
+		}
+
+		// Rmq Prefetch count
+		if viper.IsSet("rmq2es.prefetch_size") {
+			prefetch_size = viper.GetInt("rmq2es.prefetch_size")
+		} else {
+			// Default 0
+			prefetch_size = 0
+		}
+
+		// Rmq Prefetch count
+		if viper.IsSet("rmq2es.prefetch_global") {
+			prefetch_global = viper.GetBool("rmq2es.prefetch_global")
+		} else {
+			// Default 0
+			prefetch_global = false
+		}
+	}
+
+	// Print Config
+	fmt.Println("Config Variables\n", prefetch_count, prefetch_size, prefetch_global)
 }
 
 /* Start process to consume data from Rmq and insert in ES */
@@ -439,31 +473,31 @@ func initializeRmq() {
 	fmt.Printf("Exchange configured\n")
 
 	// declare Queue
-	q, err := ch.QueueDeclare(
-		qName, // qname
-		false, // durable
-		true,  // delete when unused
-		false, // exclusive
-		false, // no-wait
-		nil,   // arguments table
-	)
-	if err != nil {
-		log.Println("Rmq Q Declare: %s", err)
-		reInitializeRmq()
-	}
-	fmt.Printf("Q configured\n")
-	_ = q
+	// q, err := ch.QueueDeclarePassive(
+	// 	qName, // qname
+	// 	false, // durable
+	// 	true,  // delete when unused
+	// 	false, // exclusive
+	// 	false, // no-wait
+	// 	// amqp.Table{"x-max-length": 10000}, // arguments table
+	// )
+	// if err != nil {
+	// 	log.Println("Rmq Q Declare: %s", err)
+	// 	reInitializeRmq()
+	// }
+	// fmt.Printf("Q configured\n")
+	// _ = q
 
 	// Q bind
-	err = ch.QueueBind(qName, qBindKey, exName, false, nil)
-	if err != nil {
-		log.Println("Rmq Q Bind: %s", err)
-		reInitializeRmq()
-	}
-	fmt.Printf("Q bound\n")
+	// err = ch.QueueBind(qName, qBindKey, exName, false, nil)
+	// if err != nil {
+	// 	log.Println("Rmq Q Bind: %s", err)
+	// 	reInitializeRmq()
+	// }
+	// fmt.Printf("Q bound\n")
 
 	// Qos
-	err = ch.Qos(1, 0, false)
+	err = ch.Qos(prefetch_count, prefetch_size, prefetch_global)
 	if err != nil {
 		log.Println("Qos error: %s", err)
 		reInitializeRmq()

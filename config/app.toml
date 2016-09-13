@@ -1,0 +1,5 @@
+# RabbitMq settings
+[rmq2es]
+prefetch_count = 3
+prefetch_size = 0
+prefetch_global = false
