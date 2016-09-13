@@ -181,6 +181,9 @@ func cliArgsParse() {
 }
 
 func setDefaultConfigs() {
+	prefetch_count = 1
+	prefetch_size = 0
+	prefetch_global = false
 }
 
 func readConfig() {
@@ -193,31 +196,22 @@ func readConfig() {
 
 	err := viper.ReadInConfig()
 	if err != nil {
-		fmt.Println("Config file not found...")
+		fmt.Println("Config file not found... at config/app.toml")
 	} else {
 
 		// Rmq Prefetch count
 		if viper.IsSet("rmq2es.prefetch_count") {
 			prefetch_count = viper.GetInt("rmq2es.prefetch_count")
-		} else {
-			// Default 1 ( safe )
-			prefetch_count = 1
 		}
 
 		// Rmq Prefetch count
 		if viper.IsSet("rmq2es.prefetch_size") {
 			prefetch_size = viper.GetInt("rmq2es.prefetch_size")
-		} else {
-			// Default 0
-			prefetch_size = 0
 		}
 
 		// Rmq Prefetch count
 		if viper.IsSet("rmq2es.prefetch_global") {
 			prefetch_global = viper.GetBool("rmq2es.prefetch_global")
-		} else {
-			// Default 0
-			prefetch_global = false
 		}
 	}
 
