@@ -1,28 +1,11 @@
 # elasty
 elastic CLI for unix mac
 
-## Global Flags
- - **--url value, -u value** : Can be single value like `http://localhost:9200` , `https://localhost:9200` NOTE: Please specify full uri, i.e. with protocol and port.
- - **--index value, -i value** : index name ( default test ) (default: "test")
-
 # Config File
 See `config/app.toml` , the config file has all the comments
 
 
 # Feed Messages in Elasticsearch from RabbitMq
-
-## Config Flags for RabbitMq to ES
- - **--rmqconnectstr value, -r value** : For rmq2es : RabbitMq Connection String ( default amqp://guest:guest@localhost:5672/ ) (default: "amqp://guest:guest@localhost:5672/")
-
- - **--rmqreconntimeout value** : For rmq2es : RabbitMq ReConnection Timeout ms( default 5000 ) (default: 5000)
-
- - **--exname value** : For rmq2es : Exchange name to declare ( Default test) (default: "test")
-
- - **--exkind value** : For rmq2es : Exchange kind ( default topic) (default: "topic")
-
- - **--qName value** : For rmq2es : Queue name to declare ( Default test) (default: "test")
-
- - **--qBindKey value** : For rmq2es : Queue Binding Key with exchange ( default #) (default: "#")
 
 ## Bulk insert routine
 Requests from RabbitMq are pulled and flusehed when :
@@ -54,7 +37,7 @@ A setting should say how long can a message survive if not flushed. Lets keep a 
 
  - CLI
      + url to support multiple urls of ES cluster later
-     + Threadpool check
+     + Threadpool check. Poper format
      + Single Level check on ES , as what all the problems can be
      + Ncurses type tool to give all info
      + replica change of index
@@ -74,5 +57,8 @@ A setting should say how long can a message survive if not flushed. Lets keep a 
 
  - Distribution
      + Create brew
-     + Deb package - PPA
+     + Daemonize and Deb package
+         * Write logs to files
+         * Handle USR1 to re-open logs
+         * Have nginx type start-stop daemon and signal handling CLI
 
