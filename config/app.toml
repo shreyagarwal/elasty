@@ -1,5 +1,11 @@
 # RabbitMq settings
 [rmq2es]
-prefetch_count = 3
+
+# Prefetch Count for RabbitMq consumer Qos
+prefetch_count = 10
+
+# Prefetch size for RabbitMq consumer Qos
 prefetch_size = 0
+
+# Prefetch Global setting for RabbitMq consumer Qos. This is for all consumers or not.
 prefetch_global = false

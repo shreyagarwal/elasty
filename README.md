@@ -5,6 +5,10 @@ elastic CLI for unix mac
  - **--url value, -u value** : Can be single value like `http://localhost:9200` , `https://localhost:9200` NOTE: Please specify full uri, i.e. with protocol and port.
  - **--index value, -i value** : index name ( default test ) (default: "test")
 
+# Config File
+See `config/app.toml` , the config file has all the comments
+
+
 # Feed Messages in Elasticsearch from RabbitMq
 
 ## Config Flags for RabbitMq to ES
