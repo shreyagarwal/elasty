@@ -20,13 +20,11 @@ import (
 /* GLobal variables */
 
 // rabbit mq variables
-var esUrl, esIndex, rmqConnectStr, exName, exKind, qName, qBindKey string
-var rmqReconnTimeout, prefetch_count, prefetch_size int
-var dryrun, prefetch_global bool
+var dryrun bool
 
-// Buffer variables global
-// var bufMsgs byte[]
-// var bufMsgCount int
+var configInt = make(map[string]int)
+var configBool = make(map[string]bool)
+var configStr = make(map[string]string)
 
 /* End global variables */
 
@@ -42,8 +40,6 @@ func main() {
 /* Parse the CLI args and call appropriate function*/
 func cliArgsParse() {
 
-	xulu.Use(esUrl, esIndex)
-
 	app := cli.NewApp()
 	app.Name = "elasty"
 	app.Version = "0.0.1"
@@ -56,62 +52,7 @@ func cliArgsParse() {
 	}
 	app.Usage = "Elasticsearch toolbelt based on experience"
 
-	app.Flags = []cli.Flag{
-		cli.StringFlag{
-			Name:        "url, u",
-			Value:       "http://localhost:9200",
-			Usage:       "connect url stub ( default http://localhost:9200 )",
-			Destination: &esUrl,
-		},
-		cli.StringFlag{
-			Name:        "index, i",
-			Value:       "test",
-			Usage:       "index name ( default test )",
-			Destination: &esIndex,
-		},
-
-		// Rmq2ES flags
-		cli.StringFlag{
-			Name:        "rmqconnectstr, r",
-			Value:       "amqp://guest:guest@localhost:5672/",
-			Usage:       "For rmq2es : RabbitMq Connection String ( default amqp://guest:guest@localhost:5672/ )",
-			Destination: &rmqConnectStr,
-		},
-		cli.IntFlag{
-			Name:        "rmqreconntimeout",
-			Value:       5 * 1000,
-			Usage:       "For rmq2es : RabbitMq ReConnection Timeout ms( default 5000 )",
-			Destination: &rmqReconnTimeout,
-		},
-
-		// Exchange CLI flags
-		cli.StringFlag{
-			Name:        "exname",
-			Value:       "test",
-			Usage:       "For rmq2es : Exchange name to declare ( Default test)",
-			Destination: &exName,
-		},
-		cli.StringFlag{
-			Name:        "exkind",
-			Value:       "topic",
-			Usage:       "For rmq2es : Exchange kind ( default topic)",
-			Destination: &exKind,
-		},
-
-		// Rmq Queue CLI Flags
-		cli.StringFlag{
-			Name:        "qName",
-			Value:       "test",
-			Usage:       "For rmq2es : Queue name to declare ( Default test)",
-			Destination: &qName,
-		},
-		cli.StringFlag{
-			Name:        "qBindKey",
-			Value:       "#",
-			Usage:       "For rmq2es : Queue Binding Key with exchange ( default #)",
-			Destination: &qBindKey,
-		},
-	}
+	app.Flags = []cli.Flag{}
 
 	app.Commands = []cli.Command{
 		{
@@ -181,9 +122,41 @@ func cliArgsParse() {
 }
 
 func setDefaultConfigs() {
-	prefetch_count = 1
-	prefetch_size = 0
-	prefetch_global = false
+
+	configStr["global.esUrl"] = "http://localhost:9200"
+
+	configStr["rmq2es.rmqConnectString"] = "amqp://guest:guest@localhost:5672/"
+	configInt["rmq2es.rmqReconnTimeout"] = 5000
+
+	configBool["rmq2es.exDeclare"] = false
+	configStr["rmq2es.exName"] = "test"
+	configStr["rmq2es.exKind"] = "topic"
+	configBool["rmq2es.exDurable"] = false
+	configBool["rmq2es.exAutoDelete"] = false
+	configBool["rmq2es.exInternal"] = false
+	configBool["rmq2es.exNoWait"] = false
+
+	configBool["rmq2es.qDeclare"] = false
+	configStr["rmq2es.qName"] = "test"
+	configBool["rmq2es.qDurable"] = true
+	configBool["rmq2es.qAutoDelete"] = true
+	configBool["rmq2es.qExclusive"] = false
+	configBool["rmq2es.qNoWait"] = false
+
+	configBool["rmq2es.qBind"] = false
+	configStr["rmq2es.qBindKey"] = "#"
+	configBool["rmq2es.qBindNoWait"] = false
+
+	configStr["rmq2es.qConsumer"] = "elasty_consumer"
+	configBool["rmq2es.qConsumeAutoAck"] = false
+	configBool["rmq2es.qConsumeExclusive"] = false
+	configBool["rmq2es.qConsumeNoLocal"] = false
+	configBool["rmq2es.qConsumeNoWait"] = false
+
+	configInt["rmq2es.prefetch_count"] = 1
+	configInt["rmq2es.prefetch_size"] = 0
+	configBool["rmq2es.prefetch_global"] = false
+
 }
 
 func readConfig() {
@@ -198,25 +171,40 @@ func readConfig() {
 	if err != nil {
 		fmt.Println("Config file not found... at config/app.toml")
 	} else {
+		fmt.Println("Reading Config File")
 
-		// Rmq Prefetch count
-		if viper.IsSet("rmq2es.prefetch_count") {
-			prefetch_count = viper.GetInt("rmq2es.prefetch_count")
+		// String configs
+		for key, value := range configStr {
+			if viper.IsSet(key) {
+				configStr[key] = viper.GetString(key)
+				fmt.Println("Config: Key:", key, "Value:", configStr[key])
+			} else {
+				fmt.Println("Default :", key, "Value:", value)
+			}
 		}
 
-		// Rmq Prefetch count
-		if viper.IsSet("rmq2es.prefetch_size") {
-			prefetch_size = viper.GetInt("rmq2es.prefetch_size")
+		// Int configs
+		for key, value := range configInt {
+			if viper.IsSet(key) {
+				configInt[key] = viper.GetInt(key)
+				fmt.Println("Config: Key:", key, "Value:", configInt[key])
+			} else {
+				fmt.Println("Default :", key, "Value:", value)
+			}
+		}
+		// Bool configs
+		for key, value := range configBool {
+			if viper.IsSet(key) {
+				configBool[key] = viper.GetBool(key)
+				fmt.Println("Config: Key:", key, "Value:", configBool[key])
+			} else {
+				fmt.Println("Default :", key, "Value:", value)
+			}
 		}
 
-		// Rmq Prefetch count
-		if viper.IsSet("rmq2es.prefetch_global") {
-			prefetch_global = viper.GetBool("rmq2es.prefetch_global")
-		}
 	}
 
-	// Print Config
-	fmt.Println("Config Variables\n", prefetch_count, prefetch_size, prefetch_global)
+	fmt.Println("Config Loaded\n")
 }
 
 /* Start process to consume data from Rmq and insert in ES */
@@ -363,7 +351,7 @@ func parseThreadPoolOutput(bulkData string) {
 }
 
 func esGetThreadPool() {
-	url := esUrl + "/_cat/thread_pool?v&h=id,pid,ip,host,bulk.active,bulk.queue"
+	url := configStr["global.esUrl"] + "/_cat/thread_pool?v&h=id,pid,ip,host,bulk.active,bulk.queue"
 	fmt.Println("URL:>", url)
 
 	resp, err := http.Get(url)
@@ -400,7 +388,7 @@ func esBulkOps(bulkData []byte) {
 	}
 
 	// Create bulk Uri
-	url := esUrl + "/_bulk"
+	url := configStr["global.esUrl"] + "/_bulk"
 	fmt.Println("URL:>", url)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(bulkData)))
@@ -425,7 +413,7 @@ func esBulkOps(bulkData []byte) {
 
 // Re Initizlise rabbit Mq connection
 func reInitializeRmq() {
-	time.Sleep(time.Duration(rmqReconnTimeout) * time.Millisecond)
+	time.Sleep(time.Duration(configInt["rmq2es.rmqReconnTimeout"]) * time.Millisecond)
 	initializeRmq()
 }
 
@@ -441,7 +429,7 @@ func initializeRmq() {
 	}()
 
 	// Connects opens an AMQP connection from the credentials in the URL.
-	conn, err := amqp.DialConfig(rmqConnectStr, amqp.Config{FrameSize: 10240000})
+	conn, err := amqp.DialConfig(configStr["rmq2es.rmqConnectString"], amqp.Config{FrameSize: 10240000})
 	if err != nil {
 		log.Println("Rmq Connection open: %s", err)
 		reInitializeRmq()
@@ -459,46 +447,101 @@ func initializeRmq() {
 	fmt.Printf("Channel open\n")
 
 	// Declare exchange
-	err = ch.ExchangeDeclare(exName, exKind, true, false, false, false, nil)
-	if err != nil {
-		log.Println("Rmq Exchange Declare: %s", err)
-		reInitializeRmq()
+	if configBool["rmq2es.exDeclare"] {
+		fmt.Printf("Declaring Exchange with settings name:%s exKind:%s exDurable:%t exAutoDelete:%t exInternal:%t exNoWait:%t\n",
+			configStr["rmq2es.exName"],
+			configStr["rmq2es.exKind"],
+			configBool["rmq2es.exDurable"],
+			configBool["rmq2es.exAutoDelete"],
+			configBool["rmq2es.exInternal"],
+			configBool["rmq2es.exNoWait"],
+		)
+
+		err = ch.ExchangeDeclare(
+			configStr["rmq2es.exName"],
+			configStr["rmq2es.exKind"],
+			configBool["rmq2es.exDurable"],
+			configBool["rmq2es.exAutoDelete"],
+			configBool["rmq2es.exInternal"],
+			configBool["rmq2es.exNoWait"],
+			nil,
+		)
+		if err != nil {
+			log.Println("Rmq Exchange Declare: %s", err)
+			reInitializeRmq()
+		}
+		fmt.Printf("Exchange Declared\n\n")
+	} else {
+		fmt.Printf("Not declaring Exchange\n\n")
 	}
-	fmt.Printf("Exchange configured\n")
 
 	// declare Queue
-	// q, err := ch.QueueDeclarePassive(
-	// 	qName, // qname
-	// 	false, // durable
-	// 	true,  // delete when unused
-	// 	false, // exclusive
-	// 	false, // no-wait
-	// 	// amqp.Table{"x-max-length": 10000}, // arguments table
-	// )
-	// if err != nil {
-	// 	log.Println("Rmq Q Declare: %s", err)
-	// 	reInitializeRmq()
-	// }
-	// fmt.Printf("Q configured\n")
-	// _ = q
+	if configBool["rmq2es.qDeclare"] {
+		fmt.Printf("Declaring Q with settings name:%s qDurable:%t qAutoDelete:%t qExclusive:%t qNoWait:%t\n",
+			configStr["rmq2es.qName"],
+			configBool["rmq2es.qDurable"],
+			configBool["rmq2es.qAutoDelete"],
+			configBool["rmq2es.qExclusive"],
+			configBool["rmq2es.qNoWait"],
+		)
+
+		q, err := ch.QueueDeclare(
+			configStr["rmq2es.qName"],        // qname
+			configBool["rmq2es.qDurable"],    // durable
+			configBool["rmq2es.qAutoDelete"], // delete when unused
+			configBool["rmq2es.qExclusive"],  // exclusive
+			configBool["rmq2es.qNoWait"],     // no-wait
+			nil, // arguments table
+		)
+		if err != nil {
+			log.Println("Rmq Q Declare: %s", err)
+			reInitializeRmq()
+		}
+		fmt.Printf("Q Declared\n\n")
+		_ = q
+	} else {
+		fmt.Printf("Not declaring Queue\n\n")
+	}
 
 	// Q bind
-	// err = ch.QueueBind(qName, qBindKey, exName, false, nil)
-	// if err != nil {
-	// 	log.Println("Rmq Q Bind: %s", err)
-	// 	reInitializeRmq()
-	// }
-	// fmt.Printf("Q bound\n")
+	if configBool["rmq2es.qBind"] {
+		err = ch.QueueBind(
+			configStr["rmq2es.qName"],
+			configStr["rmq2es.qBindKey"],
+			configStr["rmq2es.exName"],
+			configBool["rmq2es.qBindNoWait"],
+			nil,
+		)
+		if err != nil {
+			log.Println("Rmq Q Bind: %s", err)
+			reInitializeRmq()
+		}
+		fmt.Printf("Q bound\n")
+	} else {
+		fmt.Printf("Not Binding Queue")
+	}
 
 	// Qos
-	err = ch.Qos(prefetch_count, prefetch_size, prefetch_global)
+	err = ch.Qos(
+		configInt["rmq2es.prefetch_count"],
+		configInt["rmq2es.prefetch_size"],
+		configBool["rmq2es.prefetch_global"],
+	)
 	if err != nil {
 		log.Println("Qos error: %s", err)
 		reInitializeRmq()
 	}
 
-	//Setup consumer
-	es_msgs, err := ch.Consume(qName, "go_consumer", false, false, false, false, nil)
+	//Setup consumer ... queue, consumer string, autoAck, exclusive, noLocal, noWait
+	es_msgs, err := ch.Consume(
+		configStr["rmq2es.qName"],
+		configStr["rmq2es.qConsumer"],
+		configBool["rmq2es.qConsumeAutoAck"],
+		configBool["rmq2es.qConsumeExclusive"],
+		configBool["rmq2es.qConsumeNoLocal"],
+		configBool["rmq2es.qConsumeNoWait"],
+		nil,
+	)
 	if err != nil {
 		log.Println("Rmq Consumer Setup: %s", err)
 		reInitializeRmq()
