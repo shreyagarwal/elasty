@@ -3,12 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/lunux2008/xulu"
@@ -17,11 +18,13 @@ import (
 	"github.com/urfave/cli"
 )
 
-/* GLobal variables */
+// Log variables
+var outlog = log.New(os.Stdout, "", log.Ldate|log.Ltime)
+var errlog = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Llongfile)
 
-// rabbit mq variables
 var dryrun bool
 
+/* config maps */
 var configInt = make(map[string]int)
 var configBool = make(map[string]bool)
 var configStr = make(map[string]string)
@@ -30,8 +33,17 @@ var configStr = make(map[string]string)
 
 func main() {
 
+	// Setting default variables before reading config file
+	setDefaultConfigs()
+
 	/* Read config file */
 	readConfig()
+
+	// setup logger
+	redirectLogToFiles()
+
+	/* signal handler */
+	sigUSR1Handle()
 
 	/* Main function only has CLI parsing */
 	cliArgsParse()
@@ -42,7 +54,7 @@ func cliArgsParse() {
 
 	app := cli.NewApp()
 	app.Name = "elasty"
-	app.Version = "0.0.1"
+	app.Version = "0.0.3"
 	app.Compiled = time.Now()
 	app.Authors = []cli.Author{
 		cli.Author{
@@ -61,23 +73,14 @@ func cliArgsParse() {
 			Usage:   "test",
 			Action: func(c *cli.Context) error {
 
-				// processRaw(`{ "delete": { "_index": "website", "_type": "blog", "_id": "123" }}
-				//                { "create": { "_index": "website", "_type": "blog", "_id": "123" }}
-				//                { "title":    "My first blog post" }
-				//                { "index":  { "_index": "website", "_type": "blog" }}
-				//                { "title":    "My second blog post" }
-				//                { "update": { "_index": "website", "_type": "blog", "_id": "123", "_retry_on_conflict" : 3}}
-				//                { "doc" : {"title" : "My updated blog post"}}
-				//                `)
-
 				dat, err := ioutil.ReadFile("./requests")
 				if err != nil {
 					panic(err)
 				}
-				fmt.Print(len(string(dat)))
+				outlog.Print(len(string(dat)))
 
 				esBulkOps(dat)
-				fmt.Printf("Done processing inputs")
+				outlog.Printf("Done processing inputs")
 				return nil
 			},
 		},
@@ -104,14 +107,24 @@ func cliArgsParse() {
 
 				// check if Dry Run
 				if !c.Bool("dry-run") {
-					fmt.Println("Dry run flag disabled")
+					outlog.Println("Dry run flag disabled")
 					dryrun = false
 				} else {
-					fmt.Println("Dry run flag enabled")
+					outlog.Println("Dry run flag enabled")
 					dryrun = true
 				}
 
 				rmq2es()
+				return nil
+			},
+		},
+
+		{
+			Name:  "signal",
+			Usage: "Send Signal to Pid",
+			Flags: []cli.Flag{},
+			Action: func(c *cli.Context) error {
+				// syscall.Kill(syscall.Getpid(), syscall.SIGHUP)
 				return nil
 			},
 		},
@@ -124,6 +137,9 @@ func cliArgsParse() {
 func setDefaultConfigs() {
 
 	configStr["global.esUrl"] = "http://localhost:9200"
+
+	configStr["global.access_log"] = ""
+	configStr["global.error_log"] = ""
 
 	configStr["rmq2es.rmqConnectString"] = "amqp://guest:guest@localhost:5672/"
 	configInt["rmq2es.rmqReconnTimeout"] = 5000
@@ -161,50 +177,94 @@ func setDefaultConfigs() {
 
 func readConfig() {
 
-	// Setting default variables before reading config file
-	setDefaultConfigs()
-
 	viper.SetConfigName("app")    // no need to include file extension
 	viper.AddConfigPath("config") // set the path of your config file
 
 	err := viper.ReadInConfig()
 	if err != nil {
-		fmt.Println("Config file not found... at config/app.toml")
+		errlog.Println("Config file not found... at config/app.toml")
 	} else {
-		fmt.Println("Reading Config File")
+		// outlog.Println("Reading Config File")
 
 		// String configs
-		for key, value := range configStr {
+		for key := range configStr {
 			if viper.IsSet(key) {
 				configStr[key] = viper.GetString(key)
-				fmt.Println("Config: Key:", key, "Value:", configStr[key])
+				// outlog.Println("Config: Key:", key, "Value:", configStr[key])
 			} else {
-				fmt.Println("Default :", key, "Value:", value)
+				// outlog.Println("Default :", key, "Value:", value)
 			}
 		}
 
 		// Int configs
-		for key, value := range configInt {
+		for key := range configInt {
 			if viper.IsSet(key) {
 				configInt[key] = viper.GetInt(key)
-				fmt.Println("Config: Key:", key, "Value:", configInt[key])
+				// outlog.Println("Config: Key:", key, "Value:", configInt[key])
 			} else {
-				fmt.Println("Default :", key, "Value:", value)
+				// outlog.Println("Default :", key, "Value:", value)
 			}
 		}
 		// Bool configs
-		for key, value := range configBool {
+		for key := range configBool {
 			if viper.IsSet(key) {
 				configBool[key] = viper.GetBool(key)
-				fmt.Println("Config: Key:", key, "Value:", configBool[key])
+				// outlog.Println("Config: Key:", key, "Value:", configBool[key])
 			} else {
-				fmt.Println("Default :", key, "Value:", value)
+				// outlog.Println("Default :", key, "Value:", value)
 			}
 		}
 
 	}
 
-	fmt.Println("Config Loaded\n")
+	// outlog.Println("Config Loaded\n")
+}
+
+/* redirect Logs to files */
+func redirectLogToFiles() {
+
+	// Setting Output Log
+	if len(configStr["global.access_log"]) > 0 {
+
+		fout, err := os.OpenFile(configStr["global.access_log"], os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			outlog.Printf("error opening out log file: %v", err)
+		}
+
+		err = syscall.Dup2(int(fout.Fd()), int(os.Stdout.Fd()))
+		if err != nil {
+			errlog.Fatalf("Failed to redirect stdout to file: %v", err)
+		}
+	}
+
+	// Setting Error Log
+	if len(configStr["global.error_log"]) > 0 {
+
+		ferr, err := os.OpenFile(configStr["global.error_log"], os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			outlog.Printf("error opening error log file: %v", err)
+		}
+
+		err = syscall.Dup2(int(ferr.Fd()), int(os.Stderr.Fd()))
+		if err != nil {
+			errlog.Fatalf("Failed to redirect stderr to file: %v", err)
+		}
+	}
+
+}
+
+/* Singla handler to reset Log Files */
+func sigUSR1Handle() {
+
+	outlog.Printf("Signal handler set for Process %d \n\n", os.Getpid())
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGUSR1, syscall.SIGUSR2)
+
+	go func() {
+		sig := <-sigs
+		outlog.Println()
+		outlog.Println(sig)
+	}()
 }
 
 /* Start process to consume data from Rmq and insert in ES */
@@ -217,7 +277,7 @@ func rmq2es() {
 
 func waitForever() {
 	// Waiting forever
-	fmt.Printf("Waiting forever. Press Ctl+C to exit ...")
+	outlog.Printf("Waiting forever. Press Ctl+C to exit ...")
 	forever := make(chan bool)
 	<-forever
 }
@@ -235,7 +295,7 @@ func processRaw(rawData string) {
 	*/
 
 	// split the data
-	// fmt.Printf("%d\n", len(strings.Split(rawData, "\n")))
+	// outlog.Printf("%d\n", len(strings.Split(rawData, "\n")))
 
 	var splits []string = strings.Split(rawData, "\n")
 	var lType string
@@ -245,15 +305,15 @@ func processRaw(rawData string) {
 	xulu.Use(splits, lType, jumps)
 
 	// work on each split
-	fmt.Printf("Splitting in lines : %d\n", len(splits))
+	outlog.Printf("Splitting in lines : %d\n", len(splits))
 
 	for iLines < len(splits) {
-		fmt.Printf("Marshalling Line : %q\n", splits[iLines])
+		outlog.Printf("Marshalling Line : %q\n", splits[iLines])
 		parsedLine, is_sane := parseSplit(splits[iLines])
 
 		if is_sane == true {
 			lType, jumps = detectLineType(parsedLine)
-			// fmt.Printf("%q\n", parsed.(type))
+			// outlog.Printf("%q\n", parsed.(type))
 
 			iLines = iLines + jumps
 		} else {
@@ -271,7 +331,7 @@ func parseSplit(singleLine string) (map[string]interface{}, bool) {
 	// err := json.Unmarshal([]byte(splits[0]), &stmnt1)
 	// if err != nil {
 	//  // panic(err)
-	//  log.Fatalf("json.Unmarshal: %s", err)
+	//  errlog.Fatalf("json.Unmarshal: %s", err)
 	// }
 
 	// var parsed interface{}
@@ -281,14 +341,14 @@ func parseSplit(singleLine string) (map[string]interface{}, bool) {
 	err := json.Unmarshal([]byte(singleLine), &parsed)
 	if err != nil {
 		// panic(err)
-		log.Printf("json.Unmarshal interface: %s", err)
+		errlog.Printf("json.Unmarshal interface: %s", err)
 		is_sane = false
 	}
 
 	// remarsh2, _ := json.Marshal(parsed)
 	// xulu.Use(remarsh2)
 	// map[delete:map[_id:123 _index:website _type:blog]]
-	// fmt.Println(string(remarsh2))
+	// outlog.Println(string(remarsh2))
 
 	return parsed, is_sane
 
@@ -331,14 +391,14 @@ func detectLineType(unmarshalledLine map[string]interface{}) (string, int) {
 		jumps = 1
 	}
 
-	fmt.Printf("Statement type : %q\n", lType)
+	outlog.Printf("Statement type : %q\n", lType)
 	return lType, jumps
 }
 
 func parseThreadPoolOutput(bulkData string) {
 	/*
 	   t := "id   pid   ip        host      bulk.active bulk.queue"
-	   fmt.Printf("%q\n", strings.Fields(t))
+	   outlog.Printf("%q\n", strings.Fields(t))
 	*/
 
 	// Split string by newlines
@@ -346,18 +406,18 @@ func parseThreadPoolOutput(bulkData string) {
 		if len(element) <= 0 {
 			continue
 		}
-		fmt.Printf("%q\n", strings.Fields(element))
+		outlog.Printf("%q\n", strings.Fields(element))
 	}
 }
 
 func esGetThreadPool() {
 	url := configStr["global.esUrl"] + "/_cat/thread_pool?v&h=id,pid,ip,host,bulk.active,bulk.queue"
-	fmt.Println("URL:>", url)
+	outlog.Println("URL:>", url)
 
 	resp, err := http.Get(url)
 
 	if err != nil {
-		log.Fatalf("Threadpool HTTP Error Error: %s", err)
+		errlog.Fatalf("Threadpool HTTP Error Error: %s", err)
 	}
 
 	defer resp.Body.Close()
@@ -365,11 +425,11 @@ func esGetThreadPool() {
 	body, err := ioutil.ReadAll(resp.Body)
 
 	if err != nil {
-		log.Fatalf("Threadpool Http Response body, Error: %s", err)
+		errlog.Fatalf("Threadpool Http Response body, Error: %s", err)
 	}
 
 	parseThreadPoolOutput(string(body))
-	// fmt.Printf("ThreadPool, %q", body)
+	// outlog.Printf("ThreadPool, %q", body)
 }
 
 func esBulkOps(bulkData []byte) {
@@ -382,14 +442,14 @@ func esBulkOps(bulkData []byte) {
 
 	/* Dry run */
 	if dryrun == true {
-		fmt.Println("Printing Dry Run Data")
-		fmt.Println(string(bulkData))
+		outlog.Println("Printing Dry Run Data")
+		outlog.Println(string(bulkData))
 		return
 	}
 
 	// Create bulk Uri
 	url := configStr["global.esUrl"] + "/_bulk"
-	fmt.Println("URL:>", url)
+	outlog.Println("URL:>", url)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(bulkData)))
 	req.Header.Set("User-Agent", "elasty 1.0 - golang")
@@ -398,15 +458,15 @@ func esBulkOps(bulkData []byte) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalf("Es Bulk operation Error: %s", err)
+		errlog.Fatalf("Es Bulk operation Error: %s", err)
 	}
 	defer resp.Body.Close()
 
-	fmt.Println("response Status:", resp.Status)
-	fmt.Println("response Headers:", resp.Header)
+	outlog.Println("response Status:", resp.Status)
+	outlog.Println("response Headers:", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
 
-	// fmt.Println("response Body:", string(body))
+	// outlog.Println("response Body:", string(body))
 	xulu.Use(body)
 
 }
@@ -424,31 +484,31 @@ func initializeRmq() {
 	c := make(chan *amqp.Error)
 	go func() {
 		err := <-c
-		log.Println("Reconnect after 5 seconds: " + err.Error())
+		errlog.Println("Reconnect after 5 seconds: " + err.Error())
 		reInitializeRmq()
 	}()
 
 	// Connects opens an AMQP connection from the credentials in the URL.
 	conn, err := amqp.DialConfig(configStr["rmq2es.rmqConnectString"], amqp.Config{FrameSize: 10240000})
 	if err != nil {
-		log.Println("Rmq Connection open: %s", err)
+		errlog.Println("Rmq Connection open: %s", err)
 		reInitializeRmq()
 	}
 	conn.NotifyClose(c)
-	fmt.Printf("Connection open\n")
+	outlog.Printf("Connection open\n")
 
 	// Opening channel
 	ch, err := conn.Channel()
 	if err != nil {
-		log.Println("Rmq Channel open: %s", err)
+		errlog.Println("Rmq Channel open: %s", err)
 		reInitializeRmq()
 	}
 	ch.NotifyClose(c)
-	fmt.Printf("Channel open\n")
+	outlog.Printf("Channel open\n")
 
 	// Declare exchange
 	if configBool["rmq2es.exDeclare"] {
-		fmt.Printf("Declaring Exchange with settings name:%s exKind:%s exDurable:%t exAutoDelete:%t exInternal:%t exNoWait:%t\n",
+		outlog.Printf("Declaring Exchange with settings name:%s exKind:%s exDurable:%t exAutoDelete:%t exInternal:%t exNoWait:%t\n",
 			configStr["rmq2es.exName"],
 			configStr["rmq2es.exKind"],
 			configBool["rmq2es.exDurable"],
@@ -467,17 +527,17 @@ func initializeRmq() {
 			nil,
 		)
 		if err != nil {
-			log.Println("Rmq Exchange Declare: %s", err)
+			errlog.Println("Rmq Exchange Declare: %s", err)
 			reInitializeRmq()
 		}
-		fmt.Printf("Exchange Declared\n\n")
+		outlog.Printf("Exchange Declared\n\n")
 	} else {
-		fmt.Printf("Not declaring Exchange\n\n")
+		outlog.Printf("Not declaring Exchange\n\n")
 	}
 
 	// declare Queue
 	if configBool["rmq2es.qDeclare"] {
-		fmt.Printf("Declaring Q with settings name:%s qDurable:%t qAutoDelete:%t qExclusive:%t qNoWait:%t\n",
+		outlog.Printf("Declaring Q with settings name:%s qDurable:%t qAutoDelete:%t qExclusive:%t qNoWait:%t\n",
 			configStr["rmq2es.qName"],
 			configBool["rmq2es.qDurable"],
 			configBool["rmq2es.qAutoDelete"],
@@ -494,13 +554,13 @@ func initializeRmq() {
 			nil, // arguments table
 		)
 		if err != nil {
-			log.Println("Rmq Q Declare: %s", err)
+			errlog.Println("Rmq Q Declare: %s", err)
 			reInitializeRmq()
 		}
-		fmt.Printf("Q Declared\n\n")
+		outlog.Printf("Q Declared\n\n")
 		_ = q
 	} else {
-		fmt.Printf("Not declaring Queue\n\n")
+		outlog.Printf("Not declaring Queue\n\n")
 	}
 
 	// Q bind
@@ -513,12 +573,12 @@ func initializeRmq() {
 			nil,
 		)
 		if err != nil {
-			log.Println("Rmq Q Bind: %s", err)
+			errlog.Println("Rmq Q Bind: %s", err)
 			reInitializeRmq()
 		}
-		fmt.Printf("Q bound\n")
+		outlog.Printf("Q bound\n")
 	} else {
-		fmt.Printf("Not Binding Queue")
+		outlog.Printf("Not Binding Queue")
 	}
 
 	// Qos
@@ -528,7 +588,7 @@ func initializeRmq() {
 		configBool["rmq2es.prefetch_global"],
 	)
 	if err != nil {
-		log.Println("Qos error: %s", err)
+		errlog.Println("Qos error: %s", err)
 		reInitializeRmq()
 	}
 
@@ -543,19 +603,19 @@ func initializeRmq() {
 		nil,
 	)
 	if err != nil {
-		log.Println("Rmq Consumer Setup: %s", err)
+		errlog.Println("Rmq Consumer Setup: %s", err)
 		reInitializeRmq()
 	}
 
 	go func() {
 		for each_msg := range es_msgs {
-			// fmt.Printf("Msg: %s %s", string(each_msg.MessageId), string(each_msg.Body[:]))
+			// outlog.Printf("Msg: %s %s", string(each_msg.MessageId), string(each_msg.Body[:]))
 
 			// send it to Elasticsearch as soon as you receive it .. and wait on receiving
 			esBulkOps(each_msg.Body[:])
 			err = each_msg.Ack(false)
 			if err != nil {
-				log.Fatalf("Error in Ack: %v", err)
+				errlog.Fatalf("Error in Ack: %v", err)
 			}
 		}
 	}()

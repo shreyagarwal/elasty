@@ -4,11 +4,11 @@ elastic CLI for unix mac
 # Config File
 See `config/app.toml` , the config file has all the comments
 
-
 # Feed Messages in Elasticsearch from RabbitMq
+run `elasty rmq2es` to start rabbitMq consumer
 
 ## Bulk insert routine
-Requests from RabbitMq are pulled and flusehed when :
+Requests from RabbitMq are pulled and flushed when :
  - The max size of bulk query ( 10Mb default ) is reached either with a single message or multiple.
  - Max timeout is reached for a message. This will lead to a flush of whatever we have.
  - Max documents limit is reached : is calculated by number of rows / 2 taking an average that insert, update requests are 2 liners whereas delete is 1 liner. 
@@ -16,24 +16,12 @@ Requests from RabbitMq are pulled and flusehed when :
 ## Dry Run
 Use -d / --dry-run flag to read messages from RabbitMq and print the HTTP statements which should be executed in ES
 
-### Algo
-- Lets not Ack unless the message has been sent to ES.
-- Prefetch increase or decrease will only throttle client which is not important here.
-
-- At each message, count number of operations. There can be 4 types of operations : Create, index, update, delete. Parse each line, and see what the key is . Count operations accordingly.
-- check
-    - If total unacked message buffer > the buffer to flush ... normally keep this as prefetch_size only
-    - If total number of unacked message > the messages to flush ... Normally keep this as PREFETCH COUNT only
-
-=> Apart from it , if x ms have elapsed after oldest message , then flush it please ... setting timer per second isnot a nice idea.. 
-A setting should say how long can a message survive if not flushed. Lets keep a timer HALF of that time...
-
 
 # Helpful Links
  - https://www.rabbitmq.com/tutorials/tutorial-one-go.html
  - https://godoc.org/github.com/streadway/amqp
 
-#ToDo / Expectations
+#ToDo / Known Bugs
 
  - CLI
      + url to support multiple urls of ES cluster later

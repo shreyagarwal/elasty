@@ -2,6 +2,13 @@
 # Do not support cluster of now
 esUrl = "http://localhost:9200"
 
+
+access_log = "_logs/out.log"
+error_log = "_logs/err.log"
+# access_log = ""
+# error_log = ""
+
+
 # RabbitMq settings
 [rmq2es]
 
