@@ -20,7 +20,7 @@ import (
 
 // Log variables
 var outlog = log.New(os.Stdout, "", log.Ldate|log.Ltime)
-var errlog = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Llongfile)
+var errlog = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
 
 var dryrun bool
 
@@ -262,8 +262,11 @@ func sigUSR1Handle() {
 
 	go func() {
 		sig := <-sigs
-		outlog.Println()
-		outlog.Println(sig)
+
+		outlog.Println("Received Signal", sig)
+
+		// Re-open Log files
+		redirectLogToFiles()
 	}()
 }
 

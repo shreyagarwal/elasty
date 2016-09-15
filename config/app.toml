@@ -3,6 +3,7 @@
 esUrl = "http://localhost:9200"
 
 
+# Leave "" or do not have these options to disable file logging
 access_log = "_logs/out.log"
 error_log = "_logs/err.log"
 # access_log = ""
