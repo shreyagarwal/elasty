@@ -26,7 +26,7 @@ var errlog = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Ls
 var dryrun bool
 
 /* config maps */
-var configPath = "config/app.toml"
+var configPath = "/etc/elasty/app.toml"
 var configInt = make(map[string]int)
 var configBool = make(map[string]bool)
 var configStr = make(map[string]string)
@@ -69,7 +69,7 @@ func cliArgsParse() {
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:        "config, c",
-			Value:       "config/app.toml",
+			Value:       "/etc/elasty/app.toml",
 			Usage:       "Config File path",
 			Destination: &configPath,
 		},
