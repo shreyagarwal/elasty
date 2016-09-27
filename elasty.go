@@ -139,7 +139,7 @@ func setDefaultConfigs() {
 	configStr["global.error_log"] = ""
 
 	configStr["rmq2es.rmqConnectString"] = "amqp://guest:guest@localhost:5672/"
-	configInt["rmq2es.rmqReconnTimeout"] = 5000
+	configInt["rmq2es.rmqReconnTimeout"] = 10 * 1000
 
 	configBool["rmq2es.exDeclare"] = false
 	configStr["rmq2es.exName"] = "test"
@@ -506,6 +506,7 @@ func initializeRmq() {
 	if err != nil {
 		errlog.Println("Rmq Connection open: %s", err)
 		reInitializeRmq()
+		return
 	}
 	conn.NotifyClose(c)
 	outlog.Printf("Connection open\n")
@@ -515,6 +516,7 @@ func initializeRmq() {
 	if err != nil {
 		errlog.Println("Rmq Channel open: %s", err)
 		reInitializeRmq()
+		return
 	}
 	ch.NotifyClose(c)
 	outlog.Printf("Channel open\n")
@@ -542,6 +544,7 @@ func initializeRmq() {
 		if err != nil {
 			errlog.Println("Rmq Exchange Declare: %s", err)
 			reInitializeRmq()
+			return
 		}
 		outlog.Printf("Exchange Declared\n\n")
 	} else {
@@ -569,6 +572,7 @@ func initializeRmq() {
 		if err != nil {
 			errlog.Println("Rmq Q Declare: %s", err)
 			reInitializeRmq()
+			return
 		}
 		outlog.Printf("Q Declared\n\n")
 		_ = q
@@ -588,6 +592,7 @@ func initializeRmq() {
 		if err != nil {
 			errlog.Println("Rmq Q Bind: %s", err)
 			reInitializeRmq()
+			return
 		}
 		outlog.Printf("Q bound\n")
 	} else {
@@ -603,6 +608,7 @@ func initializeRmq() {
 	if err != nil {
 		errlog.Println("Qos error: %s", err)
 		reInitializeRmq()
+		return
 	}
 
 	//Setup consumer ... queue, consumer string, autoAck, exclusive, noLocal, noWait
@@ -618,6 +624,7 @@ func initializeRmq() {
 	if err != nil {
 		errlog.Println("Rmq Consumer Setup: %s", err)
 		reInitializeRmq()
+		return
 	}
 
 	go func() {
