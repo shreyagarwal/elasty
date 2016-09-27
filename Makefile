@@ -1,4 +1,4 @@
-.PHONY: build doc fmt lint run test buildall buildlinux
+.PHONY: build doc fmt lint run test buildall buildlinux githubrelease clean
 
 # Prepend our _vendor directory to the system GOPATH
 # so that import path resolution will prioritize

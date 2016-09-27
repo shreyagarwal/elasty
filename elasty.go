@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -25,6 +26,7 @@ var errlog = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Ls
 var dryrun bool
 
 /* config maps */
+var configPath = "config/app.toml"
 var configInt = make(map[string]int)
 var configBool = make(map[string]bool)
 var configStr = make(map[string]string)
@@ -64,26 +66,27 @@ func cliArgsParse() {
 	}
 	app.Usage = "Elasticsearch toolbelt based on experience"
 
-	app.Flags = []cli.Flag{}
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:        "config, c",
+			Value:       "config/app.toml",
+			Usage:       "Config File path",
+			Destination: &configPath,
+		},
+	}
 
 	app.Commands = []cli.Command{
+
 		{
-			Name:    "test",
-			Aliases: []string{"th"},
-			Usage:   "test",
+			Name:  "chkconfig",
+			Usage: "Simply Load config and Check",
 			Action: func(c *cli.Context) error {
-
-				dat, err := ioutil.ReadFile("./requests")
-				if err != nil {
-					panic(err)
-				}
-				outlog.Print(len(string(dat)))
-
-				esBulkOps(dat)
-				outlog.Printf("Done processing inputs")
+				// Effectively do nothing
+				checkConfig()
 				return nil
 			},
 		},
+
 		{
 			Name:  "threadpool",
 			Usage: "Show cluster threadpool",
@@ -118,19 +121,13 @@ func cliArgsParse() {
 				return nil
 			},
 		},
-
-		{
-			Name:  "signal",
-			Usage: "Send Signal to Pid",
-			Flags: []cli.Flag{},
-			Action: func(c *cli.Context) error {
-				// syscall.Kill(syscall.Getpid(), syscall.SIGHUP)
-				return nil
-			},
-		},
 	}
 
 	app.Run(os.Args)
+
+}
+
+func checkConfig() {
 
 }
 
@@ -177,47 +174,60 @@ func setDefaultConfigs() {
 
 func readConfig() {
 
-	viper.SetConfigName("app")    // no need to include file extension
-	viper.AddConfigPath("config") // set the path of your config file
+	// Getting Abs path for config file
+	abspath, err_abs := filepath.Abs(configPath)
+	if err_abs != nil {
+		errlog.Println("Config File Error ", abspath, err_abs)
+	}
+
+	configDirPath := filepath.Dir(abspath)
+	configBaseName := filepath.Base(abspath)
+	configFileName := strings.TrimSuffix(configBaseName, filepath.Ext(configBaseName))
+
+	outlog.Println("Reading Config File : ", abspath)
+
+	// Split config file path to insert in Viper
+	viper.SetConfigName(configFileName) // no need to include file extension
+	viper.AddConfigPath(configDirPath)  // set the path of your config file
 
 	err := viper.ReadInConfig()
 	if err != nil {
-		errlog.Println("Config file not found... at config/app.toml")
+		errlog.Println("Config file not found... at ", abspath, err)
 	} else {
 		// outlog.Println("Reading Config File")
 
 		// String configs
-		for key := range configStr {
+		for key, value := range configStr {
 			if viper.IsSet(key) {
 				configStr[key] = viper.GetString(key)
-				// outlog.Println("Config: Key:", key, "Value:", configStr[key])
+				outlog.Println("Config: Key:", key, "Value:", configStr[key])
 			} else {
-				// outlog.Println("Default :", key, "Value:", value)
+				outlog.Println("Default :", key, "Value:", value)
 			}
 		}
 
 		// Int configs
-		for key := range configInt {
+		for key, value := range configInt {
 			if viper.IsSet(key) {
 				configInt[key] = viper.GetInt(key)
-				// outlog.Println("Config: Key:", key, "Value:", configInt[key])
+				outlog.Println("Config: Key:", key, "Value:", configInt[key])
 			} else {
-				// outlog.Println("Default :", key, "Value:", value)
+				outlog.Println("Default :", key, "Value:", value)
 			}
 		}
 		// Bool configs
-		for key := range configBool {
+		for key, value := range configBool {
 			if viper.IsSet(key) {
 				configBool[key] = viper.GetBool(key)
-				// outlog.Println("Config: Key:", key, "Value:", configBool[key])
+				outlog.Println("Config: Key:", key, "Value:", configBool[key])
 			} else {
-				// outlog.Println("Default :", key, "Value:", value)
+				outlog.Println("Default :", key, "Value:", value)
 			}
 		}
 
 	}
 
-	// outlog.Println("Config Loaded\n")
+	outlog.Println("Config Loaded\n")
 }
 
 /* redirect Logs to files */
@@ -228,7 +238,7 @@ func redirectLogToFiles() {
 
 		fout, err := os.OpenFile(configStr["global.access_log"], os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
-			outlog.Printf("error opening out log file: %v", err)
+			errlog.Printf("error opening out log file: %v", err)
 		}
 
 		err = syscall.Dup2(int(fout.Fd()), int(os.Stdout.Fd()))
@@ -242,7 +252,7 @@ func redirectLogToFiles() {
 
 		ferr, err := os.OpenFile(configStr["global.error_log"], os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
-			outlog.Printf("error opening error log file: %v", err)
+			errlog.Printf("error opening error log file: %v", err)
 		}
 
 		err = syscall.Dup2(int(ferr.Fd()), int(os.Stderr.Fd()))
