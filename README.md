@@ -38,7 +38,7 @@ elasty rmq2es --dry-run
 Place the binary elasty_linux_amd64 in /root/elasty folder. And place the below script in /etc/init folder by the name of elasty.conf
 
 ```sh
-description "elasty rabbitmq ingest Upstart script"  
+description "elasty rabbitmq ingest Upstart script"
 author "Shrey Agarwal"
 
 start on (net-device-up
@@ -46,26 +46,26 @@ start on (net-device-up
           and runlevel [2345])
 stop on runlevel [!2345]
 
-env DAEMON=/root/elasty/elasty_linux_amd64
+env DAEMON=/usr/bin/elasty
 env PID=/var/run/elasty.pid
 
 respawn
 respawn limit 5 100
 
-script  
+script
     echo $$ > /var/run/elasty.pid
     exec $DAEMON rmq2es >> /var/log/elasty/elasty-service.log
+
 end script
 
-pre-start script  
+pre-start script
     echo "[`date`] Starting elasty" >> /var/log/elasty/elasty-service.log
 end script
 
-pre-stop script  
+pre-stop script
     rm /var/run/elasty.pid
     echo "[`date`] Stopping elasty" >> /var/log/elasty/elasty-service.log
-end script   
-
+end script
 ```
 
 #ToDo / Known Bugs
