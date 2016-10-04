@@ -1,6 +1,10 @@
 # elasty
 elastic CLI for unix mac
 
+# To Run
+Download from Releases( github ) and run using
+`elasty -c ./config/app.toml <command>`
+
 # Config File
 See `config/app.toml` , the config file has all the comments
 
