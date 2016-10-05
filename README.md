@@ -21,6 +21,10 @@ To test config file after the build
 # Feed Messages in Elasticsearch from RabbitMq
 run `elasty rmq2es` to start rabbitMq consumer
 
+# Rabbitmq Ping
+There might be situations where rabbitMq demands ping, whether due to haproxy LB in fornt of rabbitmq cluster or due to flaky network.
+Elasty `pings` rabbitmq by creating and closing a channel.
+
 ## Bulk insert routine
 Requests from RabbitMq are pulled and flushed when :
  - The max size of bulk query ( 10Mb default ) is reached either with a single message or multiple.

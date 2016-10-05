@@ -24,9 +24,10 @@ var outlog = log.New(os.Stdout, "", log.Ldate|log.Ltime)
 var errlog = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
 
 var dryrun bool
+var rabbitmqConn *amqp.Connection
 
 /* config maps */
-var configPath = "/etc/elasty/app.toml"
+var configPath = ""
 var configInt = make(map[string]int)
 var configBool = make(map[string]bool)
 var configStr = make(map[string]string)
@@ -37,15 +38,6 @@ func main() {
 
 	// Setting default variables before reading config file
 	setDefaultConfigs()
-
-	/* Read config file */
-	readConfig()
-
-	// setup logger
-	redirectLogToFiles()
-
-	/* signal handler */
-	sigUSR1Handle()
 
 	/* Main function only has CLI parsing */
 	cliArgsParse()
@@ -81,6 +73,9 @@ func cliArgsParse() {
 			Name:  "chkconfig",
 			Usage: "Simply Load config and Check",
 			Action: func(c *cli.Context) error {
+
+				preCommandSetup()
+
 				// Effectively do nothing
 				checkConfig()
 				return nil
@@ -91,6 +86,8 @@ func cliArgsParse() {
 			Name:  "threadpool",
 			Usage: "Show cluster threadpool",
 			Action: func(c *cli.Context) error {
+
+				preCommandSetup()
 
 				esGetThreadPool()
 				return nil
@@ -117,6 +114,7 @@ func cliArgsParse() {
 					dryrun = true
 				}
 
+				preCommandSetup()
 				rmq2es()
 				return nil
 			},
@@ -127,6 +125,18 @@ func cliArgsParse() {
 
 }
 
+func preCommandSetup() {
+
+	/* Read config file */
+	readConfig()
+
+	// setup logger
+	redirectLogToFiles()
+
+	/* signal handler */
+	sigUSR1Handle()
+
+}
 func checkConfig() {
 
 }
@@ -170,11 +180,15 @@ func setDefaultConfigs() {
 	configInt["rmq2es.prefetch_size"] = 0
 	configBool["rmq2es.prefetch_global"] = false
 
+	configBool["rmq2es.rmqPing"] = false
+	configInt["rmq2es.rmqPingTime"] = 10000
+
 }
 
 func readConfig() {
 
 	// Getting Abs path for config file
+	outlog.Println("Reading Config File : ", configPath)
 	abspath, err_abs := filepath.Abs(configPath)
 	if err_abs != nil {
 		errlog.Println("Config File Error ", abspath, err_abs)
@@ -184,7 +198,9 @@ func readConfig() {
 	configBaseName := filepath.Base(abspath)
 	configFileName := strings.TrimSuffix(configBaseName, filepath.Ext(configBaseName))
 
-	outlog.Println("Reading Config File : ", abspath)
+	outlog.Println("Resolved Config Path : ", abspath)
+	outlog.Println("Config Dir : ", configDirPath)
+	outlog.Println("Config File : ", configFileName)
 
 	// Split config file path to insert in Viper
 	viper.SetConfigName(configFileName) // no need to include file extension
@@ -284,6 +300,8 @@ func sigUSR1Handle() {
 func rmq2es() {
 
 	initializeRmq()
+
+	rmqPing()
 
 	waitForever()
 }
@@ -501,18 +519,21 @@ func initializeRmq() {
 		reInitializeRmq()
 	}()
 
+	outlog.Printf("Preparing to Dial rabbitMq...\n")
+
 	// Connects opens an AMQP connection from the credentials in the URL.
-	conn, err := amqp.DialConfig(configStr["rmq2es.rmqConnectString"], amqp.Config{FrameSize: 10240000})
-	if err != nil {
-		errlog.Println("Rmq Connection open: %s", err)
+	var connErr error
+	rabbitmqConn, connErr = amqp.DialConfig(configStr["rmq2es.rmqConnectString"], amqp.Config{FrameSize: 10240000})
+	if connErr != nil {
+		errlog.Println("Rmq Connection open: %s", connErr)
 		reInitializeRmq()
 		return
 	}
-	conn.NotifyClose(c)
+	rabbitmqConn.NotifyClose(c)
 	outlog.Printf("Connection open\n")
 
 	// Opening channel
-	ch, err := conn.Channel()
+	ch, err := rabbitmqConn.Channel()
 	if err != nil {
 		errlog.Println("Rmq Channel open: %s", err)
 		reInitializeRmq()
@@ -636,6 +657,55 @@ func initializeRmq() {
 			err = each_msg.Ack(false)
 			if err != nil {
 				errlog.Fatalf("Error in Ack: %v", err)
+			}
+		}
+	}()
+}
+
+/* Ping rabbimtq : custom implementation
+Keep creating channels and closing them.
+*/
+func rmqPing() {
+	var pingInProgress bool = false
+
+	ticker := time.NewTicker(time.Duration(configInt["rmq2es.rmqPingTime"]) * time.Millisecond)
+
+	quit := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+
+				/* using return in here, will stop the next tick event */
+				if configBool["rmq2es.rmqPing"] == false {
+					outlog.Printf("Ping : disabled\n")
+					return
+				}
+
+				if pingInProgress == true {
+					outlog.Printf("Ping : Already in progress, returning\n")
+				}
+
+				pingInProgress = true
+
+				outlog.Printf("Ping : creating channel\n")
+				pingCh, err := rabbitmqConn.Channel()
+				if err != nil {
+					errlog.Println("Ping : Rmq Channel open: %s", err)
+				}
+
+				outlog.Printf("Ping : closing channel\n")
+				err = pingCh.Close()
+				if err != nil {
+					errlog.Println("Ping : Rmq Channel close: %s", err)
+				}
+				outlog.Printf("Ping : Sleeping \n")
+
+				pingInProgress = false
+
+			case <-quit:
+				ticker.Stop()
+				return
 			}
 		}
 	}()

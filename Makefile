@@ -1,4 +1,4 @@
-.PHONY: build doc fmt lint run test buildall buildlinux githubrelease clean
+.PHONY: build doc fmt lint run test buildall buildlinux githubrelease clean deb
 
 # Prepend our _vendor directory to the system GOPATH
 # so that import path resolution will prioritize
@@ -44,6 +44,43 @@ githubrelease:
 	# delete directory
 	rm -rf _release/elasty_linux_amd64
 
+
+# make deb file
+deb:
+	# create folder structure
+	# |-- DEBIAN
+	# |   `-- control
+	# |-- etc
+	# |   |-- elasty
+	# |   |-- init.d
+	# |   `-- logrotate.d
+	# |-- usr
+	# |   |-- sbin
+	# |   |   `-- elasty
+	# |   `-- share
+	# |       `-- doc
+	# |           `-- elasty
+	# |               |-- changelog.Debian.gz
+	# |               |-- changelog.gz
+	# |               |-- copyright
+	# |               `-- README
+	# `-- var
+	#     `-- log
+	#         `-- elasty
+
+	# first build for linux amd64
+
+	# copy from skeleton folder structure
+
+	# Edit control file to reflect version
+
+	# copy compiled binary
+
+	# copy ReadME
+
+	# create Deb
+
+	# remove copied folder structure
 
 clean:
 	rm -r _release/*

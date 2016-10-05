@@ -4,10 +4,10 @@ esUrl = "http://localhost:9200"
 
 
 # Leave "" or do not have these options to disable file logging
-access_log = "_logs/out.log"
-error_log = "_logs/err.log"
-# access_log = ""
-# error_log = ""
+#access_log = "_logs/out.log"
+#error_log = "_logs/err.log"
+access_log = ""
+error_log = ""
 
 
 # RabbitMq settings
@@ -90,3 +90,7 @@ qConsumeNoWait = false
 prefetch_count = 10
 prefetch_size = 0
 prefetch_global = false
+
+# RabbitMQ (AMQP) does not support a ping, which causes disconnect if connected via haproxy
+rmqPing = false
+rmqPingTime = 10000
